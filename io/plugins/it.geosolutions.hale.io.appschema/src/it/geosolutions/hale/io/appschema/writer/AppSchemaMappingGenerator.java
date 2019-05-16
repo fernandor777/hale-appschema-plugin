@@ -15,6 +15,44 @@
 
 package it.geosolutions.hale.io.appschema.writer;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URI;
+import java.text.MessageFormat;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import javax.xml.bind.JAXBContext;
+import javax.xml.bind.JAXBElement;
+import javax.xml.bind.JAXBException;
+import javax.xml.bind.Marshaller;
+import javax.xml.bind.Unmarshaller;
+import javax.xml.namespace.QName;
+import javax.xml.transform.stream.StreamSource;
+
+import org.apache.commons.lang.StringUtils;
+
+import com.google.common.collect.ListMultimap;
+
+import de.fhg.igd.slf4jplus.ALogger;
+import de.fhg.igd.slf4jplus.ALoggerFactory;
+import eu.esdihumboldt.hale.common.align.model.Alignment;
+import eu.esdihumboldt.hale.common.align.model.Cell;
+import eu.esdihumboldt.hale.common.align.model.ChildContext;
+import eu.esdihumboldt.hale.common.align.model.Entity;
+import eu.esdihumboldt.hale.common.core.io.report.IOReporter;
+import eu.esdihumboldt.hale.common.core.io.report.impl.IOMessageImpl;
+import eu.esdihumboldt.hale.common.schema.model.DefinitionGroup;
+import eu.esdihumboldt.hale.common.schema.model.PropertyDefinition;
+import eu.esdihumboldt.hale.common.schema.model.Schema;
+import eu.esdihumboldt.hale.common.schema.model.SchemaSpace;
+import eu.esdihumboldt.hale.common.schema.model.impl.DefaultPropertyDefinition;
+import eu.esdihumboldt.hale.common.schema.model.impl.internal.ReparentProperty;
+import eu.esdihumboldt.hale.io.xsd.reader.internal.XmlTypeDefinition;
 import it.geosolutions.hale.io.appschema.AppSchemaIO;
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.AppSchemaDataAccessType;
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.NamespacesPropertyType.Namespace;
@@ -36,39 +74,6 @@ import it.geosolutions.hale.io.geoserver.FeatureType;
 import it.geosolutions.hale.io.geoserver.Layer;
 import it.geosolutions.hale.io.geoserver.ResourceBuilder;
 import it.geosolutions.hale.io.geoserver.Workspace;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.URI;
-import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-import javax.xml.bind.JAXBContext;
-import javax.xml.bind.JAXBElement;
-import javax.xml.bind.JAXBException;
-import javax.xml.bind.Marshaller;
-import javax.xml.bind.Unmarshaller;
-import javax.xml.namespace.QName;
-import javax.xml.transform.stream.StreamSource;
-
-import com.google.common.collect.ListMultimap;
-
-import de.fhg.igd.slf4jplus.ALogger;
-import de.fhg.igd.slf4jplus.ALoggerFactory;
-import eu.esdihumboldt.hale.common.align.model.Alignment;
-import eu.esdihumboldt.hale.common.align.model.Cell;
-import eu.esdihumboldt.hale.common.align.model.ChildContext;
-import eu.esdihumboldt.hale.common.align.model.Entity;
-import eu.esdihumboldt.hale.common.core.io.report.IOReporter;
-import eu.esdihumboldt.hale.common.core.io.report.impl.IOMessageImpl;
-import eu.esdihumboldt.hale.common.schema.model.PropertyDefinition;
-import eu.esdihumboldt.hale.common.schema.model.Schema;
-import eu.esdihumboldt.hale.common.schema.model.SchemaSpace;
 
 /**
  * Translates a HALE alignment to an app-schema mapping configuration.
@@ -103,7 +108,8 @@ public class AppSchemaMappingGenerator {
 	 * @param workspaceConf the workspace configuration
 	 */
 	public AppSchemaMappingGenerator(Alignment alignment, SchemaSpace targetSchemaSpace,
-			DataStore dataStore, FeatureChaining chainingConf, WorkspaceConfiguration workspaceConf) {
+			DataStore dataStore, FeatureChaining chainingConf,
+			WorkspaceConfiguration workspaceConf) {
 		this.alignment = alignment;
 		this.targetSchemaSpace = targetSchemaSpace;
 		// pick the target schemas from which interpolation variables will be
@@ -261,12 +267,12 @@ public class AppSchemaMappingGenerator {
 		connectionParameters.put("workspaceName", ws.name());
 		connectionParameters.put("mappingFileName", mappingFileName);
 
-		return ResourceBuilder
-				.dataStore(dataStoreName, AppSchemaDataStore.class)
+		return ResourceBuilder.dataStore(dataStoreName, AppSchemaDataStore.class)
 				.setAttribute(it.geosolutions.hale.io.geoserver.DataStore.ID, dataStoreId)
 				.setAttribute(it.geosolutions.hale.io.geoserver.DataStore.WORKSPACE_ID, workspaceId)
 				.setAttribute(it.geosolutions.hale.io.geoserver.DataStore.CONNECTION_PARAMS,
-						connectionParameters).build();
+						connectionParameters)
+				.build();
 	}
 
 	/**
@@ -342,8 +348,7 @@ public class AppSchemaMappingGenerator {
 		String uri = ns.getUri();
 		String namespaceId = prefix + "_namespace";
 
-		return ResourceBuilder
-				.namespace(prefix)
+		return ResourceBuilder.namespace(prefix)
 				.setAttribute(it.geosolutions.hale.io.geoserver.Namespace.ID, namespaceId)
 				.setAttribute(it.geosolutions.hale.io.geoserver.Namespace.URI, uri)
 				.setAttribute(it.geosolutions.hale.io.geoserver.Namespace.ISOLATED, isIsolated(uri))
@@ -387,12 +392,12 @@ public class AppSchemaMappingGenerator {
 				.getAttribute(it.geosolutions.hale.io.geoserver.DataStore.ID);
 		it.geosolutions.hale.io.geoserver.Namespace ns = getMainNamespace();
 
-		return ResourceBuilder
-				.featureType(featureTypeName)
+		return ResourceBuilder.featureType(featureTypeName)
 				.setAttribute(FeatureType.ID, featureTypeId)
 				.setAttribute(FeatureType.DATASTORE_ID, dataStoreId)
 				.setAttribute(FeatureType.NAMESPACE_ID,
-						ns.getAttribute(it.geosolutions.hale.io.geoserver.Namespace.ID)).build();
+						ns.getAttribute(it.geosolutions.hale.io.geoserver.Namespace.ID))
+				.build();
 	}
 
 	/**
@@ -534,6 +539,16 @@ public class AppSchemaMappingGenerator {
 				if (child != null) {
 					String namespaceURI = child.getName().getNamespaceURI();
 					String prefix = child.getName().getPrefix();
+					if (StringUtils.isBlank(prefix) && child instanceof ReparentProperty) {
+						PropertyDefinition dpd = ((ReparentProperty) child).getDecoratedProperty();
+						if (dpd instanceof DefaultPropertyDefinition) {
+							DefinitionGroup dg = ((DefaultPropertyDefinition) dpd)
+									.getDeclaringGroup();
+							if (dg instanceof XmlTypeDefinition) {
+								prefix = ((XmlTypeDefinition) dg).getName().getPrefix();
+							}
+						}
+					}
 
 					context.getOrCreateNamespace(namespaceURI, prefix);
 				}
@@ -569,8 +584,8 @@ public class AppSchemaMappingGenerator {
 			try {
 				typeTransformHandler = TypeTransformationHandlerFactory.getInstance()
 						.createTypeTransformationHandler(typeTransformId);
-				FeatureTypeMapping ftMapping = typeTransformHandler.handleTypeTransformation(
-						typeCell, context);
+				FeatureTypeMapping ftMapping = typeTransformHandler
+						.handleTypeTransformation(typeCell, context);
 
 				if (ftMapping != null) {
 					Collection<? extends Cell> propertyCells = alignment.getPropertyCells(typeCell);
@@ -580,8 +595,8 @@ public class AppSchemaMappingGenerator {
 
 						try {
 							propertyTransformHandler = PropertyTransformationHandlerFactory
-									.getInstance().createPropertyTransformationHandler(
-											propertyTransformId);
+									.getInstance()
+									.createPropertyTransformationHandler(propertyTransformId);
 							propertyTransformHandler.handlePropertyTransformation(typeCell,
 									propertyCell, context);
 						} catch (UnsupportedTransformationException e) {
@@ -689,8 +704,8 @@ public class AppSchemaMappingGenerator {
 	}
 
 	private static JAXBContext createJaxbContext() throws JAXBException {
-		JAXBContext context = JAXBContext.newInstance(NET_OPENGIS_OGC_CONTEXT + ":"
-				+ APP_SCHEMA_CONTEXT);
+		JAXBContext context = JAXBContext
+				.newInstance(NET_OPENGIS_OGC_CONTEXT + ":" + APP_SCHEMA_CONTEXT);
 
 		return context;
 	}
