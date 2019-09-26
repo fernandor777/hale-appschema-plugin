@@ -50,6 +50,7 @@ import eu.esdihumboldt.hale.common.align.model.Cell;
 import eu.esdihumboldt.hale.common.align.model.ChildContext;
 import eu.esdihumboldt.hale.common.align.model.Entity;
 import eu.esdihumboldt.hale.common.align.model.EntityDefinition;
+import eu.esdihumboldt.hale.common.align.model.impl.DefaultType;
 import eu.esdihumboldt.hale.common.core.io.report.IOReporter;
 import eu.esdihumboldt.hale.common.core.io.report.impl.IOMessageImpl;
 import eu.esdihumboldt.hale.common.schema.model.ChildDefinition;
@@ -57,11 +58,16 @@ import eu.esdihumboldt.hale.common.schema.model.DefinitionGroup;
 import eu.esdihumboldt.hale.common.schema.model.PropertyDefinition;
 import eu.esdihumboldt.hale.common.schema.model.Schema;
 import eu.esdihumboldt.hale.common.schema.model.SchemaSpace;
+import eu.esdihumboldt.hale.common.schema.model.TypeDefinition;
 import eu.esdihumboldt.hale.common.schema.model.impl.AbstractPropertyDecorator;
 import eu.esdihumboldt.hale.common.schema.model.impl.DefaultPropertyDefinition;
 import eu.esdihumboldt.hale.common.schema.model.impl.DefaultTypeDefinition;
+import eu.esdihumboldt.hale.io.mongo.CollectionLinkFunction;
+import eu.esdihumboldt.hale.io.mongo.JsonPathConstraint;
 import it.geosolutions.hale.io.appschema.AppSchemaIO;
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.AppSchemaDataAccessType;
+import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.AttributeExpressionMappingType;
+import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.AttributeMappingType;
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.NamespacesPropertyType.Namespace;
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.ObjectFactory;
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.SourceDataStoresPropertyType.DataStore;
@@ -69,6 +75,8 @@ import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.Sour
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.TypeMappingsPropertyType.FeatureTypeMapping;
 import it.geosolutions.hale.io.appschema.model.FeatureChaining;
 import it.geosolutions.hale.io.appschema.model.WorkspaceConfiguration;
+import it.geosolutions.hale.io.appschema.mongodb.CollectionLinkHandler;
+import it.geosolutions.hale.io.appschema.mongodb.Utils;
 import it.geosolutions.hale.io.appschema.writer.internal.PropertyTransformationHandler;
 import it.geosolutions.hale.io.appschema.writer.internal.PropertyTransformationHandlerFactory;
 import it.geosolutions.hale.io.appschema.writer.internal.TypeTransformationHandler;
@@ -140,9 +148,25 @@ public class AppSchemaMappingGenerator {
 
 		try {
 			AppSchemaDataAccessType mapping = loadMappingTemplate();
+
+			// get mapping prefix
+			String mappingPrefix = null;
+			try {
+
+				ListMultimap<String, ? extends Entity> s = alignment.getTypeCells().iterator()
+						.next().getSource();
+				DefaultType t = (DefaultType) s.values().iterator().next();
+				mappingPrefix = t.getDefinition().getType().getConstraint(JsonPathConstraint.class)
+						.getRootKey();
+
+			} catch (Exception e) {
+				throw e;
+			}
+
 			mappingWrapper = new AppSchemaMappingWrapper(mapping);
 			context = new AppSchemaMappingContext(mappingWrapper, alignment,
 					targetSchema.getMappingRelevantTypes(), chainingConf, workspaceConf);
+			mappingWrapper.setMappingPrefix(mappingPrefix);
 
 			// create namespace objects for all target types / properties
 			// TODO: this removes all namespaces that were defined in the
@@ -266,6 +290,10 @@ public class AppSchemaMappingGenerator {
 
 		String workspaceId = (String) ws.getAttribute(Workspace.ID);
 		String dataStoreName = extractSchemaName(targetSchema.getLocation());
+		if (mainMapping.getTypeMappings().getFeatureTypeMapping().size() == 1) {
+			dataStoreName = mainMapping.getTypeMappings().getFeatureTypeMapping().get(0)
+					.getSourceType();
+		}
 		String dataStoreId = dataStoreName + "_datastore";
 		String mappingFileName = dataStoreName + ".xml";
 		Map<String, String> connectionParameters = new HashMap<String, String>();
@@ -596,44 +624,86 @@ public class AppSchemaMappingGenerator {
 	private void createTypeMappings(AppSchemaMappingContext context, IOReporter reporter) {
 		Collection<? extends Cell> typeCells = alignment.getTypeCells();
 		for (Cell typeCell : typeCells) {
-			String typeTransformId = typeCell.getTransformationIdentifier();
-			TypeTransformationHandler typeTransformHandler = null;
+			handleTypeCell(context, typeCell, reporter);
+		}
+	}
 
-			try {
-				typeTransformHandler = TypeTransformationHandlerFactory.getInstance()
-						.createTypeTransformationHandler(typeTransformId);
-				FeatureTypeMapping ftMapping = typeTransformHandler
-						.handleTypeTransformation(typeCell, context);
+	private void handleTypeCell(AppSchemaMappingContext context, Cell typeCell,
+			IOReporter reporter) {
 
-				if (ftMapping != null) {
-					Collection<? extends Cell> propertyCells = getPropertyCells(typeCell);
-					for (Cell propertyCell : propertyCells) {
-						String propertyTransformId = propertyCell.getTransformationIdentifier();
-						PropertyTransformationHandler propertyTransformHandler = null;
+		// check if need to do a recursive mapping where possible
+		// if (Utils.recursiveMapping(typeCell)) {
+		// add mappings for properties that have the same name
+		// Property source = Utils.getFirstEntity(typeCell.getSource(),
+		// Utils::convertToProperty);
+		// Property target = Utils.getFirstEntity(typeCell.getTarget(),
+		// Utils::convertToProperty);
+		// Cell cell = new DefaultCell();
+		// }
 
-						try {
-							propertyTransformHandler = PropertyTransformationHandlerFactory
+		String typeTransformId = typeCell.getTransformationIdentifier();
+		TypeTransformationHandler typeTransformHandler = null;
+
+		try {
+			typeTransformHandler = TypeTransformationHandlerFactory.getInstance()
+					.createTypeTransformationHandler(typeTransformId);
+			FeatureTypeMapping ftMapping = typeTransformHandler.handleTypeTransformation(typeCell,
+					context);
+
+			// add randomID for MongoDB types
+			TypeDefinition sourceType = Utils
+					.getFirstEntity(typeCell.getSource(), (entity) -> entity).getDefinition()
+					.getType();
+			TypeDefinition targetType = Utils
+					.getFirstEntity(typeCell.getTarget(), (entity) -> entity).getDefinition()
+					.getType();
+			JsonPathConstraint jsonConstraint = sourceType.getConstraint(JsonPathConstraint.class);
+
+			if (!jsonConstraint.isValid()) {
+				// add collection id to the container
+				AttributeMappingType attributeMapping = mappingWrapper
+						.getOrCreateAttributeMapping(targetType, null, null);
+				attributeMapping.setTargetAttribute(ftMapping.getTargetElement());
+				// set id expression
+				AttributeExpressionMappingType idExpression = new AttributeExpressionMappingType();
+				idExpression.setOCQL("collectionId()");
+				attributeMapping.setIdExpression(idExpression);
+			}
+
+			if (ftMapping != null) {
+				Collection<? extends Cell> propertyCells = alignment.getPropertyCells(typeCell);
+
+				for (Cell propertyCell : propertyCells) {
+					String propertyTransformId = propertyCell.getTransformationIdentifier();
+					try {
+						if (propertyTransformId.equals(CollectionLinkFunction.ID)) {
+							// handle MongoDB collection linking case
+							CollectionLinkHandler handler = new CollectionLinkHandler();
+							handler.handleTypeTransformation(propertyCell, context);
+						}
+						else {
+							// handle other properties
+							PropertyTransformationHandler propertyTransformHandler = PropertyTransformationHandlerFactory
 									.getInstance()
 									.createPropertyTransformationHandler(propertyTransformId);
 							propertyTransformHandler.handlePropertyTransformation(typeCell,
 									propertyCell, context);
-						} catch (UnsupportedTransformationException e) {
-							String errMsg = MessageFormat.format(
-									"Error processing property cell {0}", propertyCell.getId());
-							log.warn(errMsg, e);
-							if (reporter != null) {
-								reporter.warn(new IOMessageImpl(errMsg, e));
-							}
+						}
+					} catch (UnsupportedTransformationException e) {
+						String errMsg = MessageFormat.format("Error processing property cell {0}",
+								propertyCell.getId());
+						log.warn(errMsg, e);
+						if (reporter != null) {
+							reporter.warn(new IOMessageImpl(errMsg, e));
 						}
 					}
 				}
-			} catch (UnsupportedTransformationException e) {
-				String errMsg = MessageFormat.format("Error processing type cell{0}",
-						typeCell.getId());
-				log.warn(errMsg, e);
-				if (reporter != null) {
-					reporter.warn(new IOMessageImpl(errMsg, e));
-				}
+			}
+		} catch (UnsupportedTransformationException e) {
+			String errMsg = MessageFormat.format("Error processing type cell{0}", typeCell.getId());
+			log.warn(errMsg, e);
+			if (reporter != null) {
+				reporter.warn(new IOMessageImpl(errMsg, e));
 			}
 		}
 	}

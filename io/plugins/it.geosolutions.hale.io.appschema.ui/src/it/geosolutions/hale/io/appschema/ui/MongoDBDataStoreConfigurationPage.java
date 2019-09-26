@@ -3,12 +3,6 @@ package it.geosolutions.hale.io.appschema.ui;
 import org.eclipse.jface.dialogs.IMessageProvider;
 import org.eclipse.jface.layout.GridDataFactory;
 import org.eclipse.jface.layout.GridLayoutFactory;
-import org.eclipse.jface.viewers.ArrayContentProvider;
-import org.eclipse.jface.viewers.ComboViewer;
-import org.eclipse.jface.viewers.ISelection;
-import org.eclipse.jface.viewers.ISelectionChangedListener;
-import org.eclipse.jface.viewers.IStructuredSelection;
-import org.eclipse.jface.viewers.SelectionChangedEvent;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.KeyAdapter;
 import org.eclipse.swt.events.KeyEvent;
@@ -25,20 +19,10 @@ import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.Sour
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.SourceDataStoresPropertyType.DataStore.Parameters.Parameter;
 import it.geosolutions.hale.io.appschema.writer.AbstractAppSchemaConfigurator;
 
-/**
- * 
- * Configuration page for source DataStore.
- * 
- * <p>
- * Current implementation can handle just a single PostGIS datastore.
- * </p>
- * 
- * @author Stefano Costa, GeoSolutions
- */
-public class AppSchemaDataStoreConfigurationPage extends
+class MongoDBDataStoreConfigurationPage extends
 		AbstractConfigurationPage<AbstractAppSchemaConfigurator, AppSchemaAlignmentExportWizard> {
 
-	private static final String DEFAULT_MESSAGE = " Specify datastore parameters";
+	private static final String DEFAULT_MESSAGE = " Specify PostGIS datastore parameters";
 	private static final Parameter DBTYPE_PARAMETER = new Parameter();
 	private static final String HAS_WHITESPACE = ".*\\s.*";
 
@@ -48,29 +32,21 @@ public class AppSchemaDataStoreConfigurationPage extends
 	}
 
 	private Text host;
-	private Label labelHost;
 
 	private Text database;
-	private Label labelDatabase;
 
 	private Text schema;
-	private Label labelSchema;
 
 	private Text user;
-	private Label labelUser;
 
 	private Text password;
-	private Label labelPassword;
 
 	private Button exposePK;
-	private Label labelExposePK;
-
-	private ComboViewer databaseType;
 
 	/**
 	 * Default constructor.
 	 */
-	public AppSchemaDataStoreConfigurationPage() {
+	public MongoDBDataStoreConfigurationPage() {
 		super("datastore.conf");
 		setTitle("App-Schema DataStore configuration");
 		resetMessage();
@@ -108,40 +84,6 @@ public class AppSchemaDataStoreConfigurationPage extends
 		}
 		if (dataStoreParam.getParameters() == null) {
 			dataStoreParam.setParameters(new Parameters());
-		}
-
-		ISelection selection = databaseType.getSelection();
-		if (selection != null && selection.toString().contains("Mongo")) {
-
-			String mongoUrl;
-			if (user.getText() != null && !user.getText().isEmpty()) {
-				mongoUrl = String.format("mongodb://%s:%s@%s/%s", user.getText(),
-						password.getText(), host.getText(), database.getText());
-			}
-			else {
-				mongoUrl = String.format("mongodb://%s/%s", host.getText(), database.getText());
-			}
-
-			Parameter dataStore = new Parameter();
-			dataStore.setName("data_store");
-			dataStore.setValue(mongoUrl);
-			dataStoreParam.getParameters().getParameter().add(dataStore);
-
-			Parameter dataStoreType = new Parameter();
-			dataStoreType.setName("data_store_type");
-			dataStoreType.setValue("complex");
-			dataStoreParam.getParameters().getParameter().add(dataStoreType);
-
-			if (schema.getText() != null && !schema.getText().isEmpty()) {
-				Parameter schemaStore = new Parameter();
-				schemaStore.setName("schema_store");
-				schemaStore.setValue(schema.getText());
-				dataStoreParam.getParameters().getParameter().add(schemaStore);
-			}
-
-			provider.setParameter(AppSchemaIO.PARAM_DATASTORE, new ComplexValue(dataStoreParam));
-
-			return true;
 		}
 
 		String hostValue = host.getText();
@@ -293,44 +235,8 @@ public class AppSchemaDataStoreConfigurationPage extends
 		GridDataFactory compData = GridDataFactory.swtDefaults().align(SWT.FILL, SWT.CENTER)
 				.grab(true, false);
 
-		// database type selector
-		Label databaseTypeLabel = new Label(page, SWT.NONE);
-		databaseTypeLabel.setText("Data store type");
-		labelData.applyTo(databaseTypeLabel);
-		databaseType = new ComboViewer(page, SWT.DROP_DOWN | SWT.READ_ONLY);
-		databaseType.setContentProvider(ArrayContentProvider.getInstance());
-		databaseType.addSelectionChangedListener(new ISelectionChangedListener() {
-
-			@Override
-			public void selectionChanged(SelectionChangedEvent event) {
-				IStructuredSelection selection = (IStructuredSelection) event.getSelection();
-				if (selection.isEmpty()) {
-					return;
-				}
-				Object type = selection.getFirstElement();
-				if (type == null) {
-					return;
-				}
-				if (type.toString().contains("MongoDB")) {
-					setRelacionalVisibility(false);
-					setMongoDbVisibility(true);
-				}
-				else {
-					setMongoDbVisibility(false);
-					setRelacionalVisibility(true);
-				}
-				// ImportProvider provider =
-				// getWizard().getProvider().setParameter(name, value);;
-				// provider.setParameter(Constants.COLLECTION_NAME,
-				// Value.of(collectionName.toString()));
-				// setPageComplete(true);
-			}
-		});
-		compData.applyTo(databaseType.getControl());
-		databaseType.add(new String[] { "Relacional Database", "MongoDB" });
-
 		// host
-		labelHost = new Label(page, SWT.NONE);
+		Label labelHost = new Label(page, SWT.NONE);
 		labelHost.setText("Host(:Port)");
 		labelData.applyTo(labelHost);
 
@@ -345,7 +251,7 @@ public class AppSchemaDataStoreConfigurationPage extends
 		compData.applyTo(host);
 
 		// database
-		labelDatabase = new Label(page, SWT.NONE);
+		Label labelDatabase = new Label(page, SWT.NONE);
 		labelDatabase.setText("Database");
 		labelData.applyTo(labelDatabase);
 
@@ -360,7 +266,7 @@ public class AppSchemaDataStoreConfigurationPage extends
 		compData.applyTo(database);
 
 		// schema
-		labelSchema = new Label(page, SWT.NONE);
+		Label labelSchema = new Label(page, SWT.NONE);
 		labelSchema.setText("Schema");
 		labelData.applyTo(labelSchema);
 
@@ -375,7 +281,7 @@ public class AppSchemaDataStoreConfigurationPage extends
 		compData.applyTo(schema);
 
 		// user
-		labelUser = new Label(page, SWT.NONE);
+		Label labelUser = new Label(page, SWT.NONE);
 		labelUser.setText("Username");
 		labelData.applyTo(labelUser);
 
@@ -383,7 +289,7 @@ public class AppSchemaDataStoreConfigurationPage extends
 		compData.applyTo(user);
 
 		// password
-		labelPassword = new Label(page, SWT.NONE);
+		Label labelPassword = new Label(page, SWT.NONE);
 		labelPassword.setText("Password");
 		labelData.applyTo(labelPassword);
 
@@ -391,7 +297,7 @@ public class AppSchemaDataStoreConfigurationPage extends
 		compData.applyTo(password);
 
 		// expose primary keys
-		labelExposePK = new Label(page, SWT.NONE);
+		Label labelExposePK = new Label(page, SWT.NONE);
 		labelExposePK.setText("Expose primary keys");
 		labelData.applyTo(labelExposePK);
 
@@ -399,37 +305,6 @@ public class AppSchemaDataStoreConfigurationPage extends
 		compData.applyTo(exposePK);
 		// set initial value to true
 		exposePK.setSelection(true);
-
-		setMongoDbVisibility(false);
-		setRelacionalVisibility(false);
-	}
-
-	private void setRelacionalVisibility(boolean visibility) {
-		labelHost.setVisible(visibility);
-		labelDatabase.setVisible(visibility);
-		labelSchema.setVisible(visibility);
-		labelUser.setVisible(visibility);
-		labelPassword.setVisible(visibility);
-		labelExposePK.setVisible(visibility);
-		host.setVisible(visibility);
-		database.setVisible(visibility);
-		user.setVisible(visibility);
-		schema.setVisible(visibility);
-		password.setVisible(visibility);
-		exposePK.setVisible(visibility);
-	}
-
-	private void setMongoDbVisibility(boolean visibility) {
-		labelHost.setVisible(visibility);
-		labelDatabase.setVisible(visibility);
-		labelUser.setVisible(visibility);
-		labelPassword.setVisible(visibility);
-		labelSchema.setVisible(visibility);
-		host.setVisible(visibility);
-		database.setVisible(visibility);
-		user.setVisible(visibility);
-		password.setVisible(visibility);
-		schema.setVisible(visibility);
 	}
 
 	private enum Field {

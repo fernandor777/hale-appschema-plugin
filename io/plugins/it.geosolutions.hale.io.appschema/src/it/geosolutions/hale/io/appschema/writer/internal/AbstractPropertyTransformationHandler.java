@@ -362,8 +362,8 @@ public abstract class AbstractPropertyTransformationHandler
 		EntityDefinition parentDef = AlignmentUtil.getParent(targetPropertyEntityDef);
 		if (parentDef != null) {
 			List<ChildContext> parentPropertyPath = parentDef.getPropertyPath();
-			PropertyDefinition parentPropertyDef = parentPropertyPath
-					.get(parentPropertyPath.size() - 1).getChild().asProperty();
+			PropertyDefinition parentPropertyDef = parentPropertyPath.isEmpty() ? null
+					: parentPropertyPath.get(parentPropertyPath.size() - 1).getChild().asProperty();
 			if (parentPropertyDef != null) {
 				attributeMapping = context.getOrCreateAttributeMapping(featureType, mappingName,
 						parentPropertyPath);
@@ -374,7 +374,7 @@ public abstract class AbstractPropertyTransformationHandler
 							mapping.buildAttributeXPath(featureType, parentPropertyPath));
 				}
 
-				Namespace targetPropNS = context.getOrCreateNamespace(
+				Namespace targetPropNS = mapping.getOrCreateNamespace(
 						targetPropertyDef.getName().getNamespaceURI(),
 						targetPropertyDef.getName().getPrefix());
 				String unqualifiedName = targetPropertyDef.getName().getLocalPart();
