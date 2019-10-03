@@ -14,14 +14,14 @@ import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.Type
 import it.geosolutions.hale.io.appschema.model.ChainConfiguration;
 import it.geosolutions.hale.io.appschema.writer.internal.TypeTransformationHandler;
 import it.geosolutions.hale.io.appschema.writer.internal.mapping.AppSchemaMappingContext;
-import it.geosolutions.hale.io.appschema.writer.internal.mapping.AppSchemaMappingWrapper;
+import it.geosolutions.hale.io.appschema.writer.internal.mapping.MappingWrapper;
 
 public class CollectionLinkHandler implements TypeTransformationHandler {
 
 	@Override
 	public FeatureTypeMapping handleTypeTransformation(Cell typeCell,
 			AppSchemaMappingContext context) {
-		AppSchemaMappingWrapper mapping = context.getMappingWrapper();
+		MappingWrapper mapping = context.getMappingWrapper();
 		Property source = Utils.getFirstEntity(typeCell.getSource(), Utils::convertToProperty);
 		// get parent JSON path
 		Iterator<ChildContext> it = source.getDefinition().getPropertyPath().iterator();

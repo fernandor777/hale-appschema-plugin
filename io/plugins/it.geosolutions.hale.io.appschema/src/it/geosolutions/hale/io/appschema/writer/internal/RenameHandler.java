@@ -17,7 +17,6 @@ package it.geosolutions.hale.io.appschema.writer.internal;
 
 import eu.esdihumboldt.cst.functions.core.Rename;
 import eu.esdihumboldt.hale.common.align.model.Property;
-import it.geosolutions.hale.io.appschema.mongodb.Utils;
 import it.geosolutions.hale.io.appschema.writer.AppSchemaMappingUtils;
 
 /**
@@ -36,12 +35,6 @@ public class RenameHandler extends AbstractPropertyTransformationHandler {
 		Property source = AppSchemaMappingUtils.getSourceProperty(propertyCell);
 
 		String cqlExpression = source.getDefinition().getDefinition().getName().getLocalPart();
-
-		// apply MongoDB JSON selection if needed
-		String jsonPath = Utils.getRelativeJsonPath(source);
-		if (jsonPath != null) {
-			cqlExpression = String.format("jsonSelect('%s')", jsonPath);
-		}
 
 		return getConditionalExpression(source.getDefinition(), cqlExpression);
 	}

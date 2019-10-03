@@ -50,7 +50,6 @@ import eu.esdihumboldt.hale.common.align.model.Cell;
 import eu.esdihumboldt.hale.common.align.model.ChildContext;
 import eu.esdihumboldt.hale.common.align.model.Entity;
 import eu.esdihumboldt.hale.common.align.model.EntityDefinition;
-import eu.esdihumboldt.hale.common.align.model.impl.DefaultType;
 import eu.esdihumboldt.hale.common.core.io.report.IOReporter;
 import eu.esdihumboldt.hale.common.core.io.report.impl.IOMessageImpl;
 import eu.esdihumboldt.hale.common.schema.model.ChildDefinition;
@@ -58,16 +57,11 @@ import eu.esdihumboldt.hale.common.schema.model.DefinitionGroup;
 import eu.esdihumboldt.hale.common.schema.model.PropertyDefinition;
 import eu.esdihumboldt.hale.common.schema.model.Schema;
 import eu.esdihumboldt.hale.common.schema.model.SchemaSpace;
-import eu.esdihumboldt.hale.common.schema.model.TypeDefinition;
 import eu.esdihumboldt.hale.common.schema.model.impl.AbstractPropertyDecorator;
 import eu.esdihumboldt.hale.common.schema.model.impl.DefaultPropertyDefinition;
 import eu.esdihumboldt.hale.common.schema.model.impl.DefaultTypeDefinition;
-import eu.esdihumboldt.hale.io.mongo.CollectionLinkFunction;
-import eu.esdihumboldt.hale.io.mongo.JsonPathConstraint;
 import it.geosolutions.hale.io.appschema.AppSchemaIO;
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.AppSchemaDataAccessType;
-import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.AttributeExpressionMappingType;
-import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.AttributeMappingType;
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.NamespacesPropertyType.Namespace;
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.ObjectFactory;
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.SourceDataStoresPropertyType.DataStore;
@@ -75,8 +69,6 @@ import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.Sour
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.TypeMappingsPropertyType.FeatureTypeMapping;
 import it.geosolutions.hale.io.appschema.model.FeatureChaining;
 import it.geosolutions.hale.io.appschema.model.WorkspaceConfiguration;
-import it.geosolutions.hale.io.appschema.mongodb.CollectionLinkHandler;
-import it.geosolutions.hale.io.appschema.mongodb.Utils;
 import it.geosolutions.hale.io.appschema.writer.internal.PropertyTransformationHandler;
 import it.geosolutions.hale.io.appschema.writer.internal.PropertyTransformationHandlerFactory;
 import it.geosolutions.hale.io.appschema.writer.internal.TypeTransformationHandler;
@@ -84,6 +76,7 @@ import it.geosolutions.hale.io.appschema.writer.internal.TypeTransformationHandl
 import it.geosolutions.hale.io.appschema.writer.internal.UnsupportedTransformationException;
 import it.geosolutions.hale.io.appschema.writer.internal.mapping.AppSchemaMappingContext;
 import it.geosolutions.hale.io.appschema.writer.internal.mapping.AppSchemaMappingWrapper;
+import it.geosolutions.hale.io.appschema.writer.internal.mapping.MappingWrapper;
 import it.geosolutions.hale.io.geoserver.AppSchemaDataStore;
 import it.geosolutions.hale.io.geoserver.FeatureType;
 import it.geosolutions.hale.io.geoserver.Layer;
@@ -95,23 +88,23 @@ import it.geosolutions.hale.io.geoserver.Workspace;
  * 
  * @author Stefano Costa, GeoSolutions
  */
-public class AppSchemaMappingGenerator {
+public class AppSchemaMappingGenerator implements MappingGenerator {
 
 	private static final ALogger log = ALoggerFactory.getLogger(AppSchemaMappingGenerator.class);
 
 	private static final String NET_OPENGIS_OGC_CONTEXT = "it.geosolutions.hale.io.appschema.impl.internal.generated.net_opengis_ogc";
 	private static final String APP_SCHEMA_CONTEXT = "it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema";
 
-	private final Alignment alignment;
-	private final SchemaSpace targetSchemaSpace;
-	private final Schema targetSchema;
+	protected final Alignment alignment;
+	protected final SchemaSpace targetSchemaSpace;
+	protected final Schema targetSchema;
 	private final DataStore dataStore;
-	private final FeatureChaining chainingConf;
-	private final WorkspaceConfiguration workspaceConf;
-	private AppSchemaMappingWrapper mappingWrapper;
-	private AppSchemaMappingContext context;
-	private AppSchemaDataAccessType mainMapping;
-	private AppSchemaDataAccessType includedTypesMapping;
+	protected final FeatureChaining chainingConf;
+	protected final WorkspaceConfiguration workspaceConf;
+	protected MappingWrapper mappingWrapper;
+	protected AppSchemaMappingContext context;
+	protected AppSchemaDataAccessType mainMapping;
+	protected AppSchemaDataAccessType includedTypesMapping;
 
 	/**
 	 * Constructor.
@@ -136,37 +129,19 @@ public class AppSchemaMappingGenerator {
 	}
 
 	/**
-	 * Generates the app-schema mapping configuration.
-	 * 
-	 * @param reporter status reporter
-	 * @return the generated app-schema mapping configuration
-	 * @throws IOException if an error occurs loading the mapping template file
+	 * @see it.geosolutions.hale.io.appschema.writer.MappingGenerator#generateMapping(eu.esdihumboldt.hale.common.core.io.report.IOReporter)
 	 */
-	public AppSchemaMappingWrapper generateMapping(IOReporter reporter) throws IOException {
+	@Override
+	public MappingWrapper generateMapping(IOReporter reporter) throws IOException {
 		// reset wrapper
 		resetMappingState();
 
 		try {
 			AppSchemaDataAccessType mapping = loadMappingTemplate();
 
-			// get mapping prefix
-			String mappingPrefix = null;
-			try {
-
-				ListMultimap<String, ? extends Entity> s = alignment.getTypeCells().iterator()
-						.next().getSource();
-				DefaultType t = (DefaultType) s.values().iterator().next();
-				mappingPrefix = t.getDefinition().getType().getConstraint(JsonPathConstraint.class)
-						.getRootKey();
-
-			} catch (Exception e) {
-				throw e;
-			}
-
 			mappingWrapper = new AppSchemaMappingWrapper(mapping);
 			context = new AppSchemaMappingContext(mappingWrapper, alignment,
 					targetSchema.getMappingRelevantTypes(), chainingConf, workspaceConf);
-			mappingWrapper.setMappingPrefix(mappingPrefix);
 
 			// create namespace objects for all target types / properties
 			// TODO: this removes all namespaces that were defined in the
@@ -197,34 +172,27 @@ public class AppSchemaMappingGenerator {
 		}
 	}
 
-	private void resetMappingState() {
+	protected void resetMappingState() {
 		mappingWrapper = null;
 		mainMapping = null;
 		includedTypesMapping = null;
 	}
 
 	/**
-	 * @return the generated mapping configuration
+	 * @see it.geosolutions.hale.io.appschema.writer.MappingGenerator#getGeneratedMapping()
 	 */
-	public AppSchemaMappingWrapper getGeneratedMapping() {
+	@Override
+	public MappingWrapper getGeneratedMapping() {
 		checkMappingGenerated();
 
 		return mappingWrapper;
 	}
 
 	/**
-	 * Generates the app-schema mapping configuration and writes it to the
-	 * provided output stream.
-	 * 
-	 * <p>
-	 * If the mapping configuration requires multiple files, only the main
-	 * configuration file will be written.
-	 * </p>
-	 * 
-	 * @param output the output stream to write to
-	 * @param reporter the status reporter
-	 * @throws IOException if an I/O error occurs
+	 * @see it.geosolutions.hale.io.appschema.writer.MappingGenerator#generateMapping(java.io.OutputStream,
+	 *      eu.esdihumboldt.hale.common.core.io.report.IOReporter)
 	 */
+	@Override
 	public void generateMapping(OutputStream output, IOReporter reporter) throws IOException {
 		generateMapping(reporter);
 
@@ -232,21 +200,10 @@ public class AppSchemaMappingGenerator {
 	}
 
 	/**
-	 * Generates the app-schema mapping configuration for the included types
-	 * (non-feature types or non-top level feature types) and writes it to the
-	 * provided output stream.
-	 * 
-	 * <p>
-	 * If the mapping configuration does not require multiple files, an
-	 * {@link IllegalStateException} is thrown.
-	 * </p>
-	 * 
-	 * @param output the output stream to write to
-	 * @param reporter the status reporter
-	 * @throws IOException if an I/O error occurs
-	 * @throws IllegalStateException if the mapping configuration does not
-	 *             require multiple files
+	 * @see it.geosolutions.hale.io.appschema.writer.MappingGenerator#generateIncludedTypesMapping(java.io.OutputStream,
+	 *      eu.esdihumboldt.hale.common.core.io.report.IOReporter)
 	 */
+	@Override
 	public void generateIncludedTypesMapping(OutputStream output, IOReporter reporter)
 			throws IOException {
 		generateMapping(reporter);
@@ -255,16 +212,10 @@ public class AppSchemaMappingGenerator {
 	}
 
 	/**
-	 * Updates a schema URI in the generated mapping configuration.
-	 * 
-	 * <p>
-	 * It is used mainly by exporters that need to change the target schema
-	 * location.
-	 * </p>
-	 * 
-	 * @param oldSchemaURI the current schema URI
-	 * @param newSchemaURI the updated schema URI
+	 * @see it.geosolutions.hale.io.appschema.writer.MappingGenerator#updateSchemaURI(java.lang.String,
+	 *      java.lang.String)
 	 */
+	@Override
 	public void updateSchemaURI(String oldSchemaURI, String newSchemaURI) {
 		checkMappingGenerated();
 
@@ -275,12 +226,9 @@ public class AppSchemaMappingGenerator {
 	}
 
 	/**
-	 * Returns the generated app-schema datastore configuration.
-	 * 
-	 * @return the generated datastore configuration
-	 * @throws IllegalStateException if no app-schema mapping configuration has
-	 *             been generated yet or if no target schema is available
+	 * @see it.geosolutions.hale.io.appschema.writer.MappingGenerator#getAppSchemaDataStore()
 	 */
+	@Override
 	public it.geosolutions.hale.io.geoserver.DataStore getAppSchemaDataStore() {
 		checkMappingGenerated();
 		checkTargetSchemaAvailable();
@@ -290,10 +238,6 @@ public class AppSchemaMappingGenerator {
 
 		String workspaceId = (String) ws.getAttribute(Workspace.ID);
 		String dataStoreName = extractSchemaName(targetSchema.getLocation());
-		if (mainMapping.getTypeMappings().getFeatureTypeMapping().size() == 1) {
-			dataStoreName = mainMapping.getTypeMappings().getFeatureTypeMapping().get(0)
-					.getSourceType();
-		}
 		String dataStoreId = dataStoreName + "_datastore";
 		String mappingFileName = dataStoreName + ".xml";
 		Map<String, String> connectionParameters = new HashMap<String, String>();
@@ -311,12 +255,9 @@ public class AppSchemaMappingGenerator {
 	}
 
 	/**
-	 * Returns the generated workspace configuration for the main workspace.
-	 * 
-	 * @return the main workspace configuration
-	 * @throws IllegalStateException if the no app-schema mapping configuration
-	 *             has been generated yet or if no target schema is available
+	 * @see it.geosolutions.hale.io.appschema.writer.MappingGenerator#getMainWorkspace()
 	 */
+	@Override
 	public Workspace getMainWorkspace() {
 		checkMappingGenerated();
 		checkTargetSchemaAvailable();
@@ -328,12 +269,9 @@ public class AppSchemaMappingGenerator {
 	}
 
 	/**
-	 * Returns the generated namespace configuration for the main namespace.
-	 * 
-	 * @return the main namespace configuration
-	 * @throws IllegalStateException if no app-schema mapping configuration has
-	 *             been generated yet or if no target schema is available
+	 * @see it.geosolutions.hale.io.appschema.writer.MappingGenerator#getMainNamespace()
 	 */
+	@Override
 	public it.geosolutions.hale.io.geoserver.Namespace getMainNamespace() {
 		checkMappingGenerated();
 		checkTargetSchemaAvailable();
@@ -343,12 +281,9 @@ public class AppSchemaMappingGenerator {
 	}
 
 	/**
-	 * Returns the generated namespace configuration for secondary namespaces.
-	 * 
-	 * @return the secondary namespaces configuration
-	 * @throws IllegalStateException if no app-schema mapping configuration has
-	 *             been generated yet or if no target schema is available
+	 * @see it.geosolutions.hale.io.appschema.writer.MappingGenerator#getSecondaryNamespaces()
 	 */
+	@Override
 	public List<it.geosolutions.hale.io.geoserver.Namespace> getSecondaryNamespaces() {
 		checkMappingGenerated();
 		checkTargetSchemaAvailable();
@@ -365,12 +300,9 @@ public class AppSchemaMappingGenerator {
 	}
 
 	/**
-	 * Returns the configuration of the workspace associated to the provided
-	 * namespace.
-	 * 
-	 * @param ns the namespace
-	 * @return the configuration of the workspace associated to <code>ns</code>
+	 * @see it.geosolutions.hale.io.appschema.writer.MappingGenerator#getWorkspace(it.geosolutions.hale.io.geoserver.Namespace)
 	 */
+	@Override
 	public Workspace getWorkspace(it.geosolutions.hale.io.geoserver.Namespace ns) {
 		Object namespaceUri = ns.getAttribute(it.geosolutions.hale.io.geoserver.Namespace.URI);
 		Workspace ws = getWorkspace(ns.name(), String.valueOf(namespaceUri));
@@ -399,11 +331,9 @@ public class AppSchemaMappingGenerator {
 	}
 
 	/**
-	 * Returns the generated feature type configuration for all mapped feature
-	 * types.
-	 * 
-	 * @return the generated feature type configuration
+	 * @see it.geosolutions.hale.io.appschema.writer.MappingGenerator#getFeatureTypes()
 	 */
+	@Override
 	public List<FeatureType> getFeatureTypes() {
 		checkMappingGenerated();
 
@@ -436,11 +366,9 @@ public class AppSchemaMappingGenerator {
 	}
 
 	/**
-	 * Returns the layer configuration for the provided feature type.
-	 * 
-	 * @param featureType the feature type
-	 * @return the layer configuration
+	 * @see it.geosolutions.hale.io.appschema.writer.MappingGenerator#getLayer(it.geosolutions.hale.io.geoserver.FeatureType)
 	 */
+	@Override
 	public Layer getLayer(FeatureType featureType) {
 		String featureTypeName = featureType.name();
 		String featureTypeId = (String) featureType.getAttribute(FeatureType.ID);
@@ -451,14 +379,14 @@ public class AppSchemaMappingGenerator {
 				.setAttribute(Layer.FEATURE_TYPE_ID, featureTypeId).build();
 	}
 
-	private void checkMappingGenerated() {
+	protected void checkMappingGenerated() {
 		if (mappingWrapper == null || mainMapping == null
 				|| (includedTypesMapping == null && mappingWrapper.requiresMultipleFiles())) {
 			throw new IllegalStateException("No mapping has been generated yet");
 		}
 	}
 
-	private void checkTargetSchemaAvailable() {
+	protected void checkTargetSchemaAvailable() {
 		if (targetSchema == null) {
 			throw new IllegalStateException("Target schema not available");
 		}
@@ -472,7 +400,7 @@ public class AppSchemaMappingGenerator {
 		return this.targetSchemaSpace.getSchemas().iterator().next();
 	}
 
-	private String extractSchemaName(URI schemaLocation) {
+	protected String extractSchemaName(URI schemaLocation) {
 		String path = schemaLocation.getPath();
 		String fragment = schemaLocation.getFragment();
 		if (fragment != null && !fragment.isEmpty()) {
@@ -509,7 +437,7 @@ public class AppSchemaMappingGenerator {
 		}
 	}
 
-	private void applyDataStoreConfig() {
+	protected void applyDataStoreConfig() {
 		if (dataStore != null && dataStore.getParameters() != null) {
 			DataStore targetDS = mappingWrapper.getDefaultDataStore();
 
@@ -534,7 +462,7 @@ public class AppSchemaMappingGenerator {
 		}
 	}
 
-	private void createNamespaces() {
+	protected void createNamespaces() {
 		Collection<? extends Cell> typeCells = alignment.getTypeCells();
 		for (Cell typeCell : typeCells) {
 			ListMultimap<String, ? extends Entity> targetEntities = typeCell.getTarget();
@@ -612,7 +540,7 @@ public class AppSchemaMappingGenerator {
 		return isIsolated;
 	}
 
-	private void createTargetTypes() {
+	protected void createTargetTypes() {
 		Iterable<? extends Schema> targetSchemas = targetSchemaSpace.getSchemas();
 		if (targetSchemas != null) {
 			for (Schema targetSchema : targetSchemas) {
@@ -621,89 +549,47 @@ public class AppSchemaMappingGenerator {
 		}
 	}
 
-	private void createTypeMappings(AppSchemaMappingContext context, IOReporter reporter) {
+	protected void createTypeMappings(AppSchemaMappingContext context, IOReporter reporter) {
 		Collection<? extends Cell> typeCells = alignment.getTypeCells();
 		for (Cell typeCell : typeCells) {
-			handleTypeCell(context, typeCell, reporter);
-		}
-	}
+			String typeTransformId = typeCell.getTransformationIdentifier();
+			TypeTransformationHandler typeTransformHandler = null;
 
-	private void handleTypeCell(AppSchemaMappingContext context, Cell typeCell,
-			IOReporter reporter) {
+			try {
+				typeTransformHandler = TypeTransformationHandlerFactory.getInstance()
+						.createTypeTransformationHandler(typeTransformId);
+				FeatureTypeMapping ftMapping = typeTransformHandler
+						.handleTypeTransformation(typeCell, context);
 
-		// check if need to do a recursive mapping where possible
-		// if (Utils.recursiveMapping(typeCell)) {
-		// add mappings for properties that have the same name
-		// Property source = Utils.getFirstEntity(typeCell.getSource(),
-		// Utils::convertToProperty);
-		// Property target = Utils.getFirstEntity(typeCell.getTarget(),
-		// Utils::convertToProperty);
-		// Cell cell = new DefaultCell();
-		// }
+				if (ftMapping != null) {
+					Collection<? extends Cell> propertyCells = getPropertyCells(typeCell);
+					for (Cell propertyCell : propertyCells) {
+						String propertyTransformId = propertyCell.getTransformationIdentifier();
+						PropertyTransformationHandler propertyTransformHandler = null;
 
-		String typeTransformId = typeCell.getTransformationIdentifier();
-		TypeTransformationHandler typeTransformHandler = null;
-
-		try {
-			typeTransformHandler = TypeTransformationHandlerFactory.getInstance()
-					.createTypeTransformationHandler(typeTransformId);
-			FeatureTypeMapping ftMapping = typeTransformHandler.handleTypeTransformation(typeCell,
-					context);
-
-			// add randomID for MongoDB types
-			TypeDefinition sourceType = Utils
-					.getFirstEntity(typeCell.getSource(), (entity) -> entity).getDefinition()
-					.getType();
-			TypeDefinition targetType = Utils
-					.getFirstEntity(typeCell.getTarget(), (entity) -> entity).getDefinition()
-					.getType();
-			JsonPathConstraint jsonConstraint = sourceType.getConstraint(JsonPathConstraint.class);
-
-			if (!jsonConstraint.isValid()) {
-				// add collection id to the container
-				AttributeMappingType attributeMapping = mappingWrapper
-						.getOrCreateAttributeMapping(targetType, null, null);
-				attributeMapping.setTargetAttribute(ftMapping.getTargetElement());
-				// set id expression
-				AttributeExpressionMappingType idExpression = new AttributeExpressionMappingType();
-				idExpression.setOCQL("collectionId()");
-				attributeMapping.setIdExpression(idExpression);
-			}
-
-			if (ftMapping != null) {
-				Collection<? extends Cell> propertyCells = alignment.getPropertyCells(typeCell);
-
-				for (Cell propertyCell : propertyCells) {
-					String propertyTransformId = propertyCell.getTransformationIdentifier();
-					try {
-						if (propertyTransformId.equals(CollectionLinkFunction.ID)) {
-							// handle MongoDB collection linking case
-							CollectionLinkHandler handler = new CollectionLinkHandler();
-							handler.handleTypeTransformation(propertyCell, context);
-						}
-						else {
-							// handle other properties
-							PropertyTransformationHandler propertyTransformHandler = PropertyTransformationHandlerFactory
+						try {
+							propertyTransformHandler = PropertyTransformationHandlerFactory
 									.getInstance()
 									.createPropertyTransformationHandler(propertyTransformId);
 							propertyTransformHandler.handlePropertyTransformation(typeCell,
 									propertyCell, context);
-						}
-					} catch (UnsupportedTransformationException e) {
-						String errMsg = MessageFormat.format("Error processing property cell {0}",
-								propertyCell.getId());
-						log.warn(errMsg, e);
-						if (reporter != null) {
-							reporter.warn(new IOMessageImpl(errMsg, e));
+						} catch (UnsupportedTransformationException e) {
+							String errMsg = MessageFormat.format(
+									"Error processing property cell {0}", propertyCell.getId());
+							log.warn(errMsg, e);
+							if (reporter != null) {
+								reporter.warn(new IOMessageImpl(errMsg, e));
+							}
 						}
 					}
 				}
-			}
-		} catch (UnsupportedTransformationException e) {
-			String errMsg = MessageFormat.format("Error processing type cell{0}", typeCell.getId());
-			log.warn(errMsg, e);
-			if (reporter != null) {
-				reporter.warn(new IOMessageImpl(errMsg, e));
+			} catch (UnsupportedTransformationException e) {
+				String errMsg = MessageFormat.format("Error processing type cell{0}",
+						typeCell.getId());
+				log.warn(errMsg, e);
+				if (reporter != null) {
+					reporter.warn(new IOMessageImpl(errMsg, e));
+				}
 			}
 		}
 	}
@@ -740,7 +626,7 @@ public class AppSchemaMappingGenerator {
 				"http://www.w3.org/1999/xlink", childDefinition.getName().getNamespaceURI());
 	}
 
-	private AppSchemaDataAccessType loadMappingTemplate() throws IOException {
+	protected AppSchemaDataAccessType loadMappingTemplate() throws IOException {
 		InputStream is = getClass().getResourceAsStream(AppSchemaIO.MAPPING_TEMPLATE);
 
 		JAXBElement<AppSchemaDataAccessType> templateElement = null;
@@ -758,16 +644,9 @@ public class AppSchemaMappingGenerator {
 	}
 
 	/**
-	 * Writes the generated app-schema mapping to the provided output stream.
-	 * 
-	 * <p>
-	 * If the mapping configuration requires multiple files, only the main
-	 * configuration file will be written.
-	 * </p>
-	 * 
-	 * @param out the output stream to write to
-	 * @throws IOException if an I/O error occurs
+	 * @see it.geosolutions.hale.io.appschema.writer.MappingGenerator#writeMappingConf(java.io.OutputStream)
 	 */
+	@Override
 	public void writeMappingConf(OutputStream out) throws IOException {
 		checkMappingGenerated();
 
@@ -780,20 +659,9 @@ public class AppSchemaMappingGenerator {
 	}
 
 	/**
-	 * Writes the generated app-schema mapping configuration for the included
-	 * types (non-feature types or non-top level feature types) to the provided
-	 * output stream.
-	 * 
-	 * <p>
-	 * If the mapping configuration does not require multiple files, an
-	 * {@link IllegalStateException} is thrown.
-	 * </p>
-	 * 
-	 * @param out the output stream to write to
-	 * @throws IOException if an I/O error occurs
-	 * @throws IllegalStateException if the mapping configuration does not
-	 *             require multiple files
+	 * @see it.geosolutions.hale.io.appschema.writer.MappingGenerator#writeIncludedTypesMappingConf(java.io.OutputStream)
 	 */
+	@Override
 	public void writeIncludedTypesMappingConf(OutputStream out) throws IOException {
 		checkMappingGenerated();
 
