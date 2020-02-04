@@ -103,6 +103,7 @@ import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.AppS
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.AttributeMappingType;
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.AttributeMappingType.ClientProperty;
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.JdbcMultiValueType;
+import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.NamespacesPropertyType.Namespace;
 import it.geosolutions.hale.io.appschema.impl.internal.generated.app_schema.TypeMappingsPropertyType.FeatureTypeMapping;
 import it.geosolutions.hale.io.appschema.model.ChainConfiguration;
 import it.geosolutions.hale.io.appschema.model.FeatureChaining;
@@ -278,10 +279,10 @@ public class AppSchemaMappingTest {
 
 		processJoinAlignment(alignment, null);
 
-//		logMapping(mappingWrapper.getMainMapping());
+		final AppSchemaDataAccessType mainMapping = mappingWrapper.getMainMapping();
+		logMapping(mainMapping);
 
-		List<FeatureTypeMapping> ftMappings = mappingWrapper.getMainMapping().getTypeMappings()
-				.getFeatureTypeMapping();
+		List<FeatureTypeMapping> ftMappings = mainMapping.getTypeMappings().getFeatureTypeMapping();
 		assertEquals(2, ftMappings.size());
 
 		FeatureTypeMapping lcdMapping = null, lcuMapping = null;
@@ -320,6 +321,15 @@ public class AppSchemaMappingTest {
 		assertEquals(SOURCE_DATASET_ID, nestedMapping.getSourceExpression().getOCQL());
 		assertNull(nestedMapping.getSourceExpression().getLinkElement());
 		assertNull(nestedMapping.getSourceExpression().getLinkField());
+
+		// check namespace correct prefix output
+		List<Namespace> namespaces = mainMapping.getNamespaces().getNamespace();
+		Namespace baseNamespace = namespaces.stream()
+				.filter(namespace -> "http://inspire.ec.europa.eu/schemas/base/3.3"
+						.equals(namespace.getUri()))
+				.findFirst().orElse(null);
+		assertNotNull(baseNamespace);
+		assertEquals("base", baseNamespace.getPrefix());
 	}
 
 	@Test
@@ -422,8 +432,8 @@ public class AppSchemaMappingTest {
 
 		processJoinAlignment(alignment, chainingConf);
 
-//		logMapping(mappingWrapper.getMainMapping());
-//		logMapping(mappingWrapper.getIncludedTypesMapping());
+		logMapping(mappingWrapper.getMainMapping());
+		logMapping(mappingWrapper.getIncludedTypesMapping());
 
 		List<FeatureTypeMapping> ftMappings = mappingWrapper.getMainMapping().getTypeMappings()
 				.getFeatureTypeMapping();
